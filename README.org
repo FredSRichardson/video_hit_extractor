@@ -1,0 +1,250 @@
+* What this repo accomplishes
+
+This repo provides two scripts.  The first detects hits to a specific
+region in an input image file occuring in an input video file and
+produces a list of start and end times for each hit.  The second
+script takes one or more lists of start and end times, pads them by
+0.5 seconds (by default) and merges segments seperated by 1.0 seconds
+(by default) or less.  The final segments are sorted by start time and
+then used to extract clips from the original video and merge them into
+a new video.  This provides a convenient way of tracking (for example)
+skills and stats increases throught a playthrough.
+
+* Requirements and prerequisites
+
+So far the scripts here have only been tested in a Linux environment
+(Ubuntu running under WSL), but in theory the scripts should run under
+Windows with some modifications. 
+
+You'll need to download some videos playthroughs from MrLlamaSC
+YouTube [[https://www.youtube.com/@MrLlamaSC][channel]]. One reliable way to do that is to use the utility
+=yt-dlp= which is available on GitHub [[https://github.com/yt-dlp/yt-dlp][here]].
+
+In addition to a Python environment (obtainable many ways, I happen to
+use Anaconda), you will need to install =FFMPEG= available from [[https://ffmpeg.org/download.html][here]] and
+you'll need to use =pip= to install =ffmpeg-python= (the source code is
+hosted on GitHub [[https://github.com/kkroening/ffmpeg-python][here]]).
+
+As an example of installation using [[https://www.anaconda.com/download/success][Anaconda]] (or miniconda etc), once
+you have a version of FFMPEG installed on your system, use the
+following steps:
+
+First creating a new conda environment, I use =ffmpeg=:
+#+begin_src sh
+  conda create -n ffmpeg
+  conda activate ffmpeg
+  conda install pip
+  pip install ffmpeg-python
+#+end_src
+
+That should be it!
+
+* Usage
+
+First download some MrLlamaSC videos.  As an example, this is how I downloaded
+MrLlamaSC's Normal, Nightmare and Hell Summoner videos he posted in
+July 2025:
+
+#+begin_src sh
+  yt-dlp https://youtu.be/S-hrg7Yx7_4?si=Notqf21hfN2_a8lc
+  ln -s '[Normal] Summon Necromancer Guided Playthrough ïœ Diablo 2 Resurrected [S-hrg7Yx7_4].webm' summ_nec_norm.webm
+  yt-dlp  https://youtu.be/iCKVy8DUmNE?si=Mh93NkiJEDteOKan
+  ln -s '[Nightmare] Summon Necromancer Guided Playthrough ｜ Diablo 2 Resurrected [iCKVy8DUmNE].webm' summ_nec_ntmr.webm
+  yt-dlp https://youtu.be/spOsjKIMGic?si=WE_lFPBWL2IX_dXi
+  ln -s '[Hell] Summon Necro Guided Playthrough ïœ Diablo 2 Resurrected [spOsjKIMGic].webm' summ_nec_hell.webm
+#+end_src
+
+You can also make a 10 minute video for testing things as follows:
+#+begin_src sh
+  ffmpeg -i summ_nec_norm.webm -t 00:10:00 -c copy summ_nec_norm_10min.webm 
+#+end_src
+
+Next we need to detect the skill, stat and inventory bar images in the
+video.  Here are the currently available images and they bounding
+boxes to search for:
+
+|------------------------+------------------+-----------------------------|
+| File                   | Desc             | Bounding box script args    |
+|------------------------+------------------+-----------------------------|
+| pngs/d2-skills-bar.png | Skill bar PNG    | -X 1227 -Y 106 -W 572 -H 65 |
+| pngs/d2-inv-bar.png    | Iventory bar PNG | -X 1226 -Y 104 -W 575 -H 70 |
+| pngs/d2-stats-bar.png  | Stat bar PNG     | -X 120  -Y 102 -W 574 -H 69 |
+|------------------------+------------------+-----------------------------|
+
+
+As an example, the following commands will detect skill and stat bar
+hits and create a video from them:
+
+#+begin_src sh
+  ./detect_hits.py -X 1227 -Y 106 -W 572 -H 65 mrllamasc_video.webm pngs/d2-skills-bar.png mrllamasc_video_skills_hits.txt
+  ./detect_hits.py -X 120  -Y 102 -W 574 -H 69 mrllamasc_video.webm pngs/d2-stats-bar.png mrllamasc_video_stats_hits.txt
+  ./extract_and_merge.py \
+      mrllamasc_video_skills_hits.txt \
+      mrllamasc_video_skills_hits.txt \
+      mrllamasc_video.webm \
+      mrllamasc_video_skills_stats.webm
+#+end_src
+
+The =detect_hits.py= scripts can take a while depending on how much
+compute power you have and how long the video is and the output video
+should be quite a lot shorter than the input video.
+
+Note that you also need a fair amount of disk space for the full
+length videos.  
+
+These steps are wrapped up in a bash scripts as follows:
+
+
+
+
+* Limitations
+
+New PNG images may need to be generated if a different resolution
+video is downloaded or if MrLlamaSC uses a different resolution or
+aspect ratio in his videos.
+
+* Generating PNG Images
+
+Use a media viewer like the open source [[https://www.videolan.org/vlc/][VLC Media Player]] to save a
+snapshot at a point in the video that contains the window bar you want
+to search for.  Open the snapshot in a program like Microsoft Paint
+so you can figure out where the upper left and lower right X and Y
+coordinates are.  From these you can get the height (difference
+between the Y coordinates) and width (difference between the X
+coordinates).  You don't have to change the image so everything else
+is black (even though I did this - it's not neccessary).
+
+You'll now use the X, Y, height (H) and width (W) as arguments to
+=detect_hits.py= along with your image file.
+
+
+* Details about how this works with FFMPEG
+
+Once you know the X, Y, width and height of a region you want to
+detect from an image in a video file, you can use the following
+command with FFMPEG to find the hits.  Here's an example using
+=pngs/d2-skills-bar.png= using the parameters in the table above:
+
+#+begin_src sh
+  filt="[0:v]crop=w=572:h=65:x=1227:y=106:exact=1[c1];\
+        [1:v]crop=w=572:h=65:x=1227:y=106:exact=1[c2];\
+        [c1][c2]blend=difference:shortest=1,blackframe=98:32"
+
+  ffmpeg  -i mrllamasc_video.webm \
+          -r 1
+          -loop 1 \
+          -i pngs/d2-skills-bar.png \
+          -an \
+          -filter_complex "$filt" \
+          -f null \
+          -
+#+end_src
+
+The argument to =-filter_complex= can be read as follows: The input
+stream for the video is identified =[0:v]= and the stream for the
+image file is =[1:v]=.  Both streams are cropped to the same region
+(you could also crop the PNG file in advance so long as the resulting
+region matches the image size).  The =exact=1= parameter is essential
+to ensure the two regions match exactly.  The cropped video stream is
+assigned the identifier =[c1]= and the image is assigned the
+identifier =[c2]=.  Next, both cropped image streams =[c1]= and =[c2]=
+are passed to the =blend= module where their difference is taken and
+the =shortest=1= parameter ensures that the differernce of only one
+frame is taken (since the image has only one frame).  The difference
+will produce an almost black frame when the image closely matches a
+frame in the video and the final module =blackframe= reports on
+resulting frames with 98% of the pixels considered "black" (the first
+parameter) where "black" is determined by a luminance threshold of 32
+(the second parameter - a value between typically between 0 and 255).
+
+Here is an example of the output of the above command:
+#+begin_example
+frame= 6902 fps=1507 q=-0.0 size=N/A time=00:01:55.03 bitrate=N/A speed=25.1x
+frame= 7646 fps=1505 q=-0.0 size=N/A time=00:02:07.43 bitrate=N/A speed=25.1x
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8237 pblack:98 pts:137283 t:137.283000 type:P last_keyframe:7920
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8238 pblack:98 pts:137300 t:137.300000 type:I last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8239 pblack:98 pts:137317 t:137.317000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8240 pblack:98 pts:137333 t:137.333000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8241 pblack:98 pts:137350 t:137.350000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8242 pblack:98 pts:137367 t:137.367000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8243 pblack:98 pts:137383 t:137.383000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8244 pblack:98 pts:137400 t:137.400000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8245 pblack:98 pts:137417 t:137.417000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8246 pblack:98 pts:137433 t:137.433000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8247 pblack:98 pts:137450 t:137.450000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8248 pblack:98 pts:137467 t:137.467000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8249 pblack:98 pts:137483 t:137.483000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8250 pblack:98 pts:137500 t:137.500000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8251 pblack:98 pts:137517 t:137.517000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8252 pblack:98 pts:137533 t:137.533000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8253 pblack:98 pts:137550 t:137.550000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8254 pblack:98 pts:137567 t:137.567000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8255 pblack:98 pts:137583 t:137.583000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8256 pblack:98 pts:137600 t:137.600000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8257 pblack:98 pts:137617 t:137.617000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8258 pblack:98 pts:137633 t:137.633000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8259 pblack:98 pts:137650 t:137.650000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8260 pblack:98 pts:137667 t:137.667000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8261 pblack:98 pts:137683 t:137.683000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8262 pblack:98 pts:137700 t:137.700000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8263 pblack:98 pts:137717 t:137.717000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8264 pblack:98 pts:137733 t:137.733000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8265 pblack:98 pts:137750 t:137.750000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8266 pblack:98 pts:137767 t:137.767000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8267 pblack:98 pts:137783 t:137.783000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8268 pblack:98 pts:137800 t:137.800000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8269 pblack:98 pts:137817 t:137.817000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8270 pblack:98 pts:137833 t:137.833000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8271 pblack:98 pts:137850 t:137.850000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8272 pblack:98 pts:137867 t:137.867000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8273 pblack:98 pts:137883 t:137.883000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8274 pblack:98 pts:137900 t:137.900000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8275 pblack:98 pts:137917 t:137.917000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8276 pblack:98 pts:137933 t:137.933000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8277 pblack:98 pts:137950 t:137.950000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8278 pblack:98 pts:137967 t:137.967000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8279 pblack:98 pts:137983 t:137.983000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8280 pblack:98 pts:138000 t:138.000000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8281 pblack:98 pts:138017 t:138.017000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8282 pblack:98 pts:138033 t:138.033000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8283 pblack:98 pts:138050 t:138.050000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8284 pblack:98 pts:138067 t:138.067000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8285 pblack:98 pts:138083 t:138.083000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8286 pblack:98 pts:138100 t:138.100000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8287 pblack:98 pts:138117 t:138.117000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8288 pblack:98 pts:138133 t:138.133000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8289 pblack:98 pts:138150 t:138.150000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8290 pblack:98 pts:138167 t:138.167000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8291 pblack:98 pts:138183 t:138.183000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8292 pblack:98 pts:138200 t:138.200000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8293 pblack:98 pts:138217 t:138.217000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8294 pblack:98 pts:138233 t:138.233000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8295 pblack:98 pts:138250 t:138.250000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8296 pblack:98 pts:138267 t:138.267000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8297 pblack:98 pts:138283 t:138.283000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8298 pblack:98 pts:138300 t:138.300000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8299 pblack:98 pts:138317 t:138.317000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8300 pblack:98 pts:138333 t:138.333000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8301 pblack:98 pts:138350 t:138.350000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8302 pblack:98 pts:138367 t:138.367000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8303 pblack:98 pts:138383 t:138.383000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8304 pblack:98 pts:138400 t:138.400000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8305 pblack:98 pts:138417 t:138.417000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8306 pblack:98 pts:138433 t:138.433000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8307 pblack:98 pts:138450 t:138.450000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8308 pblack:98 pts:138467 t:138.467000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8309 pblack:98 pts:138483 t:138.483000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8310 pblack:98 pts:138500 t:138.500000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8311 pblack:98 pts:138517 t:138.517000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8312 pblack:98 pts:138533 t:138.533000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8313 pblack:98 pts:138550 t:138.550000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8314 pblack:98 pts:138567 t:138.567000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8315 pblack:98 pts:138583 t:138.583000 type:P last_keyframe:8238
+[Parsed_blackframe_3 @ 0x60deae37d6c0] frame:8316 pblack:98 pts:138600 t:138.600000 type:P last_keyframe:8238
+frame= 8388 fps=1503 q=-0.0 size=N/A time=00:02:19.80 bitrate=N/A speed=25.1x
+#+end_example
+
+From the above output, we see that image matches in the video were
+detected starting at around 137.3 seconds up through about 138.6
+seconds.  Viewing the original video between these time frames
+confirmsm that the target image appears between these two times.
