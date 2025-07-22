@@ -143,7 +143,7 @@ try:
     )
     print(f"Files concatenated successfully to {output_file}")
 except ffmpeg.Error as e:
-    print(f"Error during concatenation: {e.stderr.decode()}")
+    print(f"Error during concatenation: {e}")
 
 # Cleanup temp files:
 for fname in files_to_clean:

@@ -92,8 +92,17 @@ should be quite a lot shorter than the input video.
 Note that you also need a fair amount of disk space for the full
 length videos.  
 
-These steps are wrapped up in a bash scripts as follows:
+These steps are wrapped up in the bash script =run_find_hits.sh= that
+can be run as follows:
+#+begin_src sh
+./run_find_hits.sh summ_nec_norm_10min.webm  summ_nec_norm_10min_out
+#+end_src
 
+Resulting in the video files:
+#+begin_example
+summ_nec_norm_10min_out_skills_stats.mp4
+summ_nec_norm_10min_out_skills_stats_inv.mp4
+#+end_example
 
 
 
