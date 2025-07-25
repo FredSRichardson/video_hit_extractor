@@ -120,13 +120,12 @@ with open(list_file, 'w') as ofp:
         dur_sec = en_sec - st_sec
         ofname = f'{args.output_video}-{iseg:05d}.mp4'
         files_to_clean.append(ofname)
-        ofp.write(f"file '{ofname}'\n")
+        ofp.write(f"file '{os.path.basename(ofname)}'\n")
         try:
             (
                 ffmpeg.input(args.input_video, ss=st_sec)
                 .output(ofname, t=dur_sec, format='mp4', loglevel='quiet')
-                .overwrite_output()
-                .run()
+                .run(overwrite_output=True)
             )
             print(f"File trimed successfully to start_time={st_sec:.3f} end_time={en_sec:.3f} and written to: {ofname}")
         except ffmpeg.Error as e:
@@ -138,8 +137,7 @@ try:
         ffmpeg
         .input(list_file, f='concat', safe=0)
         .output(output_file, c='copy', format='mp4', loglevel='quiet')
-        .overwrite_output()
-        .run()
+        .run(overwrite_output=True)
     )
     print(f"Files concatenated successfully to {output_file}")
 except ffmpeg.Error as e:
